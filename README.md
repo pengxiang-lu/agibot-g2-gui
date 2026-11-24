@@ -1,145 +1,188 @@
-# G2 直接采集 LeRobot 数据集
+# Agibot G2 机器人工作台
 
-这个程序在遥操作过程中订阅机器人数据，直接在电脑上保存 **LeRobot v3.0** 数据集，无须先生成 `.pbdat` 再转换。使用本机已经安装的 **LeRobot 0.6.2**。
+## 一、简介
 
-## 1. 工作方式
+![机器人工作台 UI 界面](images/workstation-ui.png)
+
+　　这个项目是用于智元精灵 G2 的 **Qt GUI桌面工作台**，界面分为“数据采集”和“机器人操作”两个分页。电脑通过 SSH 连接机器人，在机器人本机调用 GDK，完成数据读取、动作控制和状态反馈。
+
+　　制作该GUI界面的原因是官方的Genie Link离线采集数据会默认保存数据到机器人上，而且默认使用Genie Studio自己的数据格式，不能定义采集数据的格式。所以制作了这个GUI，操作界面采集的数据直接保存为电脑上的 **LeRobot v3.0 数据集**，不需要先导出 `.pbdat` 再转换。下面是这个GUI的基本功能：
+
+| 功能 | 内容 |
+| --- | --- |
+| 数据采集 | 创建、重命名和删除任务，选择相机，开始与结束采集，查看采集记录 |
+| VR 按键 | 接收 Genie Link 的左手柄 X 键信号，切换开始／停止采集 |
+| 可视化回放 | 查看采集视频、G2 URDF 关节轨迹和夹爪状态，不控制真机 |
+| 真机回放 | 对照采集画面与实时画面，回放双臂和夹爪动作，可选择速度 |
+| 手动控制 | 鼠标摇杆和方向键控制底盘，支持阿克曼、蟹行；上身关节点动 |
+| 独立复位 | 通过 GDK 规划复位，无需启动 VR；检查实测关节是否到位 |
+| 语音与表情 | 设置音量、文字播报、导入音频、切换内置表情和上传图片／视频 |
+
+　　默认连接方式如下，**SSH 地址是机器人主机地址，数据集写入电脑磁盘**：
 
 ```text
-Genie Link → 机器人执行遥操作
-                  ↓ 只读 GDK 订阅
-机器人上的 Python → SSH 加密传输 → 电脑上的 LeRobot 写入器
+电脑：Qt 界面、任务管理、LeRobot 写入器
+                 ↕ SSH
+机器人主机：GDK 数据读取、运动控制
+                 ↕ 内部网络
+头部交互板：语音、音频、脸屏表情
 ```
 
-默认通过 SSH 在机器人本机运行读取进程。程序代码随命令传入，不在机器人上安装软件或留下脚本文件；数据集写入电脑。SSH 密码由终端提示输入，不保存在程序中。
+　　当前独立复位已核实的设备为 `G2A0005C600872`，使用 `G2_t2v2_crs` 配置及 OmniPicker 夹爪对应的 pose 11。**其他机器人不能直接套用这个复位配置**，程序会校验设备身份和夹爪型号。
 
-程序不会发出运动指令，也不会自动切换机器人的控制模式。Genie Link 正常用于遥操作；**本程序的开始/结束与 Genie Link 的“数据采集”按钮相互独立**。只需要本程序生成的数据时，不必再开启 APP 的原始数据录制。若想保留两份数据，可以同时开启，但 episode 边界不会自动同步。
+## 二、环境安装
 
-## 2. 先检查数据流
-
-在终端中执行：
+### 1. 下载项目
 
 ```bash
-cd /home/lpx/桌面/lerobot_dataset_collection
-bash run.sh --probe --ssh agi@192.168.31.11
+git clone https://github.com/pengxiang-lu/agibot-g2-gui.git
+cd agibot-g2-gui
 ```
 
-按提示输入机器人 SSH 账号的密码。IP 以当前机器人实际地址为准。使用 10G 有线连接时，可以把地址换成 `agi@10.42.1.101`。
+　　下文命令默认在项目根目录 `agibot-g2-gui/` 中执行。已有项目时，进入自己的项目目录即可。
 
-成功后显示 `PROBE OK`，表示已经收到并解码了 3 帧同步的状态、真实控制指令和相机图像。**仅看到 SSH 登录成功，不代表所有采集接口已经验证。**
+　　目录名可以修改，两个启动脚本会自动定位自身目录；如果使用桌面快捷方式，移动或重命名项目后，需要同步修改 `.desktop` 文件中的 `Exec`、`Path` 和 `Icon`。
 
-若提示没有 action，先检查机器人是否处于正常遥操作状态、Genie Link 是否已连接。程序不会用状态值代替 action，也不会自行启动机器人。若 SDK 的 topic 名称不同，可通过 `--state-topic` 和 `--action-topic` 指定，必须确认消息类型及语义一致。
+### 2. 准备电脑环境
 
-## 3. 开始采集
+　　当前主要面向 **Ubuntu 24.04**，其他 Linux 发行版尚未验证，Windows 和 macOS 尚未适配。请先安装 Conda，再准备以下 Python 环境。
 
-例如采集“用左手拿起杯子”，每段 20 秒，共 5 段：
+　　当前代码以 **Python 3.12、LeRobot 0.6.2** 为基准。采集器使用了该版本的流式视频写入接口，并在启动时检查版本，不能直接换成其他版本。
 
-```bash
-bash run.sh ./datasets/pick_cup \
-  --ssh agi@192.168.31.11 \
-  --task "用左手拿起杯子" \
-  --duration 20 --episodes 5
-```
-
-每段开始前按 Enter，看到 `RECORDING` 后开始遥操作。每段到时自动保存，再等待下一次 Enter。
-
-手动决定一段的长度：
-
-```bash
-bash run.sh ./datasets/pick_cup_manual \
-  --ssh agi@192.168.31.11 \
-  --task "用左手拿起杯子"
-```
-
-按 Enter 开始，采集过程中按一次 **Ctrl+C**，程序停止读取并保存已完成的帧。等待 `Saved episode` 和 `Dataset:` 输出后再退出。正在保存时再次强制退出，可能导致该段不完整。
-
-输出目录必须是不存在的新目录，程序拒绝覆盖已有数据集。`--episodes` 可以在一次运行中向同一数据集写入多段；当前版本不支持跨次运行追加。
-
-## 4. 保存的内容
-
-| 字段 | 内容 |
+| 组件 | 用途／版本要求 |
 | --- | --- |
-| `observation.state` | `/hal/joint_state.motor_position`，实测关节位置，单位 rad |
-| `action` | `/hal/joint_cmd.position`，绝对目标关节位置，单位 rad |
-| `observation.images.head_color` | 头部彩色图像 |
-| `observation.images.hand_left_color` | 左手彩色图像 |
-| `observation.images.hand_right_color` | 右手彩色图像 |
-| `source_timestamp_ns` | 当前帧在源时钟上的采样时间 |
-| `state_timestamp_ns` / `action_timestamp_ns` | 状态和控制指令消息自身的时间戳 |
-| `camera_timestamp_ns.*` | 每路图像原始时间戳 |
-| `task_index` 等标准字段 | 由 LeRobot 生成的任务、episode、帧号和相对时间 |
+| Python | 3.12，已验证版本为 3.12.13 |
+| LeRobot | 0.6.2，从匹配的源码目录以 editable 方式安装 |
+| PyQt5 | Qt 5 图形界面 |
+| VTK | URDF 模型显示 |
+| NumPy、OpenCV、PyArrow、PyAV | 数值处理、图像处理、Parquet 和视频读写 |
+| OpenSSH、FFmpeg | 连接机器人、媒体转码 |
 
-关节顺序取初始化时状态与指令中共有的关节名，并写入 feature 的 `names`。未包含的状态关节记录在 `capture_manifest.json` 的 `omitted_state_joints` 中。左右夹爪实测位置（弧度）另存为 `observation.gripper`，顺序为左、右，时间戳分别存为 `gripper_left_timestamp_ns` 和 `gripper_right_timestamp_ns`。夹爪目标命令未采集，原有 `action` 维度不变。底盘轮速、深度、IMU、雷达及力矩等字段未采集。
+　　首先安装系统工具：
 
-action 是时间戳不晚于采样时间的最新真实控制指令，不是下一帧状态、位置增量或归一化值。状态和指令优先使用 `header.stamp`；Header 无有效时间时才回退到 DDS 的 `source_ts_ns`，所选来源记录在清单中。这台机器人的实测情况是 DDS 时间戳为零、Header 有效。程序会保留各路时间戳并检查时钟范围；软件对齐不等同于硬件同步曝光。
+```bash
+sudo apt update
+sudo apt install -y git openssh-client ffmpeg libgl1 libegl1 libxcb-xinerama0
+```
 
-固定频率采样，状态/图像取最近帧，默认最大偏差 50 ms；action 最大允许年龄 100 ms。数据流卡住、超出同步容差或持续跟不上时，会停止并报错。有完整帧时会保存有效前缀，并在清单中标记 `interrupted_by_error`，同时返回非零退出码。强制断电或写盘失败不保证能恢复当前 episode。
+　　如果是新环境，创建 Python 3.12 环境；已经有满足依赖要求的 `lerobot` 环境时，直接激活即可，不需要重复创建。
+
+```bash
+conda create -n lerobot python=3.12 -y
+conda activate lerobot
+```
+
+　　从 [LeRobot 官方仓库](https://github.com/huggingface/lerobot) 下载源码。官方没有 `v0.6.2` 标签，因此不能使用 `git clone --branch v0.6.2`；下面固定到版本号为 `0.6.2` 的源码提交，避免直接安装持续变化的 `main` 分支。
+
+　　在本项目根目录执行以下命令，将 LeRobot 下载到项目的同级目录：
+
+```bash
+git clone https://github.com/huggingface/lerobot.git ../lerobot
+git -C ../lerobot checkout --detach f9e9d739ea7055b282ea1b165e8785412a674693
+python -m pip install -e "../lerobot"
+python -m pip install "av>=15,<16" pyarrow PyQt5 vtk PyYAML
+```
+
+　　如果 `../lerobot` 已存在，请选择一个新的下载目录，并同步修改后续命令中的路径，避免影响已有源码和环境。安装后不要删除或移动 LeRobot 源码目录，editable 安装会直接引用它。
+
+　　安装后检查依赖：
+
+```bash
+python - <<'PY'
+import importlib.metadata as metadata
+import numpy, cv2, pyarrow, av
+from PyQt5 import QtCore
+import vtk
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.configs.video import RGBEncoderConfig
+assert metadata.version("lerobot") == "0.6.2"
+print("LeRobot:", metadata.version("lerobot"))
+print("Qt:", QtCore.QT_VERSION_STR)
+print("VTK:", vtk.vtkVersion.GetVTKVersion())
+PY
+ffmpeg -version
+```
+
+　　**采集视频使用 CPU 流式编码，不要求使用 GPU**。同时运行模型评测时，仍需留意 CPU、磁盘和网络带宽。以上步骤尚未在全新系统上完成完整安装验证。
+
+### 3. 准备机器人连接
+
+　　==电脑与机器人可通过网线或同一局域网通信==。下面的 IP 仅为连接示例，使用时请替换为自己机器人平板显示的实际地址：
+
+| 连接方式 | 机器人地址示例 | 电脑端要求 |
+| --- | --- | --- |
+| 无线局域网 | `192.168.31.11` | 与机器人可互通，检查是否存在无线客户端隔离 |
+| 10G 有线口 | `10.42.1.101` | 例如配置为 `10.42.1.102/24`，避免地址冲突 |
+
+```bash
+# 查看电脑到机器人的实际路由
+ip route get 192.168.31.11
+
+# 检查 SSH 登录；密码使用这台机器人对应账号的密码
+ssh agi@192.168.31.11
+```
+
+　　语音和表情另外使用头部交互板的 SSH，默认地址为 `agi@10.42.0.111`，经机器人主机转发。**主机与交互板使用各自的登录凭据**，密码不写入项目文件。
+
+## 三、使用方法
+
+### 1. 启动工作台
+
+```bash
+# 请先进入克隆得到的 agibot-g2-gui 项目根目录
+conda activate lerobot
+export LEROBOT_PYTHON="$CONDA_PREFIX/bin/python"
+bash start_gui.sh
+```
+
+　　启动脚本默认使用 `$HOME/anaconda3/envs/lerobot/bin/python`。如果 Conda 安装位置不同，通过 `LEROBOT_PYTHON` 指定实际解释器。命令行采集的 `run.sh` 也使用同一变量。
+
+　　在界面顶部填写机器人 SSH 地址，点击“连接”，输入密码，等待显示“已连接”。同一界面会话复用 SSH 连接；网络中断、机器人重启或会话失效后需要重新连接。
+
+### 2. 创建任务和采集数据
+
+![连接与采集操作图解](images/ui-guide/01-collect.png)
+
+### 3. 查看数据格式和保存位置
+
+
+　　每次 GUI 采集创建一个独立的 LeRobot 数据集，默认保存在项目下：
 
 ```text
-datasets/pick_cup/
-├── meta/                   # LeRobot 元信息、任务、统计和 episode 索引
-├── data/                   # Parquet，关节状态、action、时间戳等
-├── videos/                 # MP4，多相机视频
-└── capture_manifest.json   # 来源、采集配置和中断情况
+gui_tasks/
+└── <任务ID>/
+    ├── task.json
+    └── recordings/
+        └── <采集时间_ID>/
+            ├── meta/
+            ├── data/
+            ├── videos/
+            └── capture_manifest.json
 ```
 
-## 5. 帧率、分辨率和性能
-
-默认 30 FPS、3 路相机、图像最大宽度 640，保持比例。机器人端做 JPEG 95 质量的传输压缩，电脑端直接进行 CPU H.264 流式编码，避免存储大量临时 PNG。**不使用 GPU，不占用 TurboVLA 的显存。** 视频编码每路 1 个线程，仍会消耗 CPU 和网络资源。
-
-网络或机器人算力不足时，先减少相机数量、分辨率或帧率：
-
-```bash
-bash run.sh ./datasets/test_head \
-  --task "测试采集" --ssh agi@192.168.31.11 \
-  --cameras head_color --fps 15 --max-width 480 --duration 10
-```
-
-保留原始尺寸、取消额外 JPEG 传输压缩：
-
-```bash
-bash run.sh ./datasets/native \
-  --task "测试采集" --max-width 0 --transport raw --duration 10
-```
-
-`raw` 仅指 SSH 传输使用原始 RGB；最终 MP4 仍为有损 H.264。原尺寸 RGB 带宽需求很高，应使用足够快的有线网络。已通过这台机器人无线 SSH、3 相机、30 FPS、最大宽度 640 的 8 秒采集测试；长时间采集仍建议先检查网络稳定性。
-
-支持的相机还包括 `head_stereo_left`、`head_stereo_right` 及三路头部鱼眼。必须是机器人当前已经启用的流；程序不会修改相机配置。
-
-## 6. 验证数据集
-
-文件夹内的 `datasets/debug_capture_20261123/` 是本次实机调试生成的 8 秒数据：22 个关节、3 路相机、240 帧。采集程序没有发出运动指令，机器人基本静止，这条用于检查格式和链路，不是有意义的任务演示。
-
-```bash
-/home/lpx/anaconda3/envs/lerobot/bin/python src/verify_dataset.py ./datasets/pick_cup
-```
-
-检查官方 LeRobot 加载、每段首尾视频解码、帧数、固定时间间隔和 action 因果时间关系。测试时不上传到 Hugging Face。
-
-不连接机器人即可测试完整写入流程：
-
-```bash
-bash run.sh ./datasets/synthetic_test \
-  --simulate --task "测试" --fps 10 --duration 1 --episodes 2 --yes
-/home/lpx/anaconda3/envs/lerobot/bin/python src/verify_dataset.py ./datasets/synthetic_test
-```
-
-`--simulate` 是人工生成的测试数据，任务和清单中均有标记，不能当作机器人演示数据。
-
-## 7. 环境与文件
-
-本机直接使用 `run.sh` 即可，它默认调用 `/home/lpx/anaconda3/envs/lerobot/bin/python`。其他电脑可先准备带有 **LeRobot 0.6.2、NumPy、OpenCV、PyAV** 的环境，通过 `LEROBOT_PYTHON=/绝对路径/python bash run.sh ...` 指定解释器。LeRobot 版本校验是因为当前程序依赖并验证了 0.6.2 的流式编码队列接口，用于防止编码队列满时静默丢帧。
-
-机器人端要求可以 SSH 登录、`python3` 能导入 NumPy/OpenCV，并且 `/home/agi/app/env.sh` 配置了该机器人的 GDK。可用 `--remote-env` 更改脚本路径。密码由 SSH 提示输入；自动运行请使用自己配置的 SSH 密钥。
-
-若已经在本机配置好了匹配的 GDK Python 环境，也可以传 `--local-gdk --gdk-python /对应环境/python`。本机 GDK 与 LeRobot 不需要使用同一个 Python。该路径尚未做实机验证，默认建议使用机器人本机 GDK 的 SSH 方式。
-
-| 文件 | 作用 |
+| 字段 | 含义 |
 | --- | --- |
-| `src/collect.py` | 电脑端启动、episode 管理、LeRobot 写入 |
-| `src/gdk_source.py` | 机器人端只读 GDK 订阅、同步和图像传输 |
-| `run.sh` | 使用本机已有 LeRobot 环境的启动入口 |
-| `src/verify_dataset.py` | 官方读回与时间戳检查 |
-| `src/test_collection.py` | 对齐、通信和中断保存测试 |
-| `docs/VALIDATION.md` | 当前已验证项目与实机验证限制 |
+| `observation.state` | 实测关节角，单位 rad |
+| `action` | `/hal/joint_cmd.position` 中的绝对目标关节角，单位 rad |
+| `observation.gripper` | 左、右夹爪实测位置，单位 rad |
+| `observation.images.*` | 所选相机的图像，保存为 MP4 |
+| `source_timestamp_ns`、`state_timestamp_ns`、`action_timestamp_ns` | 采样、状态和指令时间戳 |
+| `camera_timestamp_ns.*`、`gripper_*_timestamp_ns` | 相机与夹爪时间戳 |
 
-运行测试：`/home/lpx/anaconda3/envs/lerobot/bin/python -m unittest discover -s src -p 'test_collection.py'`。
+　　**action 不是关节角增量，也不是下一帧 state**。例如目标从 `0.5 rad` 变为 `0.6 rad`，保存的是绝对角度，而不是 `+0.1 rad`。夹爪目前采集实测位置，没有采集夹爪目标命令；底盘位姿、深度、IMU、雷达和力矩没有写入这些采集字段。
+
+　　界面任务目录使用唯一 ID，任务名保存在 `task.json`。删除记录后，界面 Episode 编号按剩余顺序重排；每个独立数据集内部的 episode 从 0 开始。修改任务名不会重写历史数据的任务描述。
+
+　　数据流异常时，程序会尽量保存已完成的有效帧，并在 `capture_manifest.json` 中记录中断原因。它不等于一次完整成功的采集，使用前需要检查记录状态。
+
+### 4. 可视化与真机回放
+
+![查看数据与回放入口](images/ui-guide/02-replay.png)
+
+### 5. 机器人手动操作与复位
+
+![手动控制与复位操作图解](images/ui-guide/03-operate.png)
+
+### 6. 语音、音频和表情
+
+![语音与表情操作图解](images/ui-guide/04-media.png)
