@@ -1,0 +1,96 @@
+{
+  "simulated": false,
+  "fps": 30,
+  "episodes": [
+    {
+      "episode_index": 0,
+      "frames": 659,
+      "status": "saved",
+      "error": null,
+      "last_source_timestamp_ns": 1795496672022686959
+    }
+  ],
+  "action_semantics": "Absolute joint position targets (radians) from recorded command topic; causal latest-at-or-before sample, not next state or delta.",
+  "state_semantics": "Measured motor_position (radians), ordered by joint_names.",
+  "state_topic": "/hal/joint_state",
+  "action_topic": "/hal/joint_cmd",
+  "synchronization": "Uniform source-clock grid; nearest state/image/gripper; causal command. Prefer protobuf header.stamp, fallback to DDS source_ts_ns; selected origins are recorded in schema.timestamp_sources.",
+  "max_sync_ms": 50,
+  "gripper_semantics": "Measured left and right gripper driver joint positions in radians, ordered by schema.gripper_names; not gripper commands.",
+  "gripper_topics": [
+    "/hal/left_ee_data",
+    "/hal/right_ee_data"
+  ],
+  "image_processing": {
+    "max_width": 640,
+    "transport": "jpeg",
+    "jpeg_quality": 95,
+    "video_codec": "libx264",
+    "GPU": false
+  },
+  "excluded": "Gripper commands, depth, IMU, lidar, wheel commands, force/torque and proprioception other than positions.",
+  "genie_link_button_integration": false,
+  "schema": {
+    "kind": "ready",
+    "joint_names": [
+      "idx01_body_joint1",
+      "idx02_body_joint2",
+      "idx03_body_joint3",
+      "idx04_body_joint4",
+      "idx05_body_joint5",
+      "idx11_head_joint1",
+      "idx12_head_joint2",
+      "idx13_head_joint3",
+      "idx21_arm_l_joint1",
+      "idx22_arm_l_joint2",
+      "idx23_arm_l_joint3",
+      "idx24_arm_l_joint4",
+      "idx25_arm_l_joint5",
+      "idx26_arm_l_joint6",
+      "idx27_arm_l_joint7",
+      "idx61_arm_r_joint1",
+      "idx62_arm_r_joint2",
+      "idx63_arm_r_joint3",
+      "idx64_arm_r_joint4",
+      "idx65_arm_r_joint5",
+      "idx66_arm_r_joint6",
+      "idx67_arm_r_joint7"
+    ],
+    "gripper_names": [
+      "idx31_gripper_l_inner_joint1",
+      "idx71_gripper_r_inner_joint1"
+    ],
+    "omitted_state_joints": [],
+    "cameras": [
+      "head_color",
+      "hand_left_color",
+      "hand_right_color"
+    ],
+    "shapes": [
+      [
+        400,
+        640,
+        3
+      ],
+      [
+        528,
+        640,
+        3
+      ],
+      [
+        528,
+        640,
+        3
+      ]
+    ],
+    "timestamp_sources": {
+      "state": "protobuf.header.stamp",
+      "action": "protobuf.header.stamp",
+      "gripper_right": "protobuf.header.stamp",
+      "gripper_left": "protobuf.header.stamp"
+    },
+    "transport": "jpeg",
+    "simulated": false,
+    "payload_sizes": []
+  }
+}
