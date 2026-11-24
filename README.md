@@ -2,7 +2,7 @@
 
 ## 一、简介
 
-![机器人工作台 UI 界面](images/workstation-ui.png)
+![机器人工作台 UI 界面](assets/workstation-ui.png)
 
 　　这个项目是用于智元精灵 G2 的 **Qt GUI桌面工作台**，界面分为“数据采集”和“机器人操作”两个分页。电脑通过 SSH 连接机器人，在机器人本机调用 GDK，完成数据读取、动作控制和状态反馈。
 
@@ -139,9 +139,13 @@ bash start_gui.sh
 
 　　在界面顶部填写机器人 SSH 地址，点击“连接”，输入密码，等待显示“已连接”。同一界面会话复用 SSH 连接；网络中断、机器人重启或会话失效后需要重新连接。
 
+　　**SSH 密码是机器人主机 `agi` 用户的登录密码，不是 Wi-Fi 密码或 Genie Link 账号密码。** 请向设备管理员或智元交付人员获取，以实际设备配置为准；连接成功后，本次会话无需重复输入。
+
 ### 2. 创建任务和采集数据
 
-![连接与采集操作图解](images/ui-guide/01-collect.png)
+　　**使用 VR 遥操作采集时，请先在 PICO 头显中打开 Genie Link 并连接机器人**，确认可以正常遥操作后，再在工作台中开始采集。无需同时点击 Genie Link 自带的数据采集按钮。
+
+![连接与采集操作图解](assets/01-collect.png)
 
 ### 3. 查看数据格式和保存位置
 
@@ -177,12 +181,12 @@ gui_tasks/
 
 ### 4. 可视化与真机回放
 
-![查看数据与回放入口](images/ui-guide/02-replay.png)
+![查看数据与回放入口](assets/02-replay.png)
 
 ### 5. 机器人手动操作与复位
 
-![手动控制与复位操作图解](images/ui-guide/03-operate.png)
+![手动控制与复位操作图解](assets/03-operate.png)
 
 ### 6. 语音、音频和表情
 
-![语音与表情操作图解](images/ui-guide/04-media.png)
+![语音与表情操作图解](assets/04-media.png)
